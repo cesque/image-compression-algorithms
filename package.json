@@ -1,0 +1,20 @@
+{
+    "name": "image-compression-algorithms",
+    "version": "1.0.0",
+    "license": "MIT",
+    "type": "module",
+    "dependencies": {
+        "canvas": "^2.11.2"
+    },
+    "devDependencies": {
+        "@types/node": "^20.12.11",
+        "tsup": "^8.0.2",
+        "typescript": "^5.4.5"
+    },
+    "scripts": {
+        "build": "tsup"
+    },
+    "main": "lib/index.cjs",
+    "module": "lib/index.js",
+    "types": "lib/index.d.ts"
+}
