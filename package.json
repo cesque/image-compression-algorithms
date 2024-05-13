@@ -1,5 +1,6 @@
 {
-    "name": "image-compression-algorithms",
+    "name": "@cesque/image-compression-algorithms",
+    "description": "a handful of hand-grown image compression algorithms",
     "version": "1.0.0",
     "license": "MIT",
     "type": "module",
