@@ -196,6 +196,10 @@ export class GradImgCompressedImage implements CompressedImage {
         }
 
         this.#gradientScale = (Math.round((gradientScale / GradImg.GRADIENT_SCALE_MAX) * 255) / 255) * GradImg.GRADIENT_SCALE_MAX
+
+        if (this.#gradientScale != gradientScale) {
+            console.log(`quantised gradient scale from ${ gradientScale } to ${ this.#gradientScale }`)
+        }
     }
 
     #makeColorString(color) {
@@ -293,9 +297,8 @@ export class GradImgCompressedImage implements CompressedImage {
         if (boxesHeight > 255) throw new Error(`image height too large to be serialised: ${ this.#boxes.size.height / this.#boxSize } boxes tall of size ${ this.#boxSize }`)
         if (this.#boxes.data.length >= (1 << 24)) throw new Error(`image data too large to be serialised: ${ this.#boxes.data.length } (must be able to fit in 24bit integer)`)
 
-        console.log(this.#gradientScale)
         const gradientScaleByte = Math.max(1, Math.round((this.#gradientScale / GradImg.GRADIENT_SCALE_MAX) * 255))
-        bytes.push(gradientScaleByte) // adding v0.2
+        bytes.push(gradientScaleByte) // added in v0.2
         bytes.push(this.#boxSize)
         bytes.push(boxesWidth)
         bytes.push(boxesHeight)
