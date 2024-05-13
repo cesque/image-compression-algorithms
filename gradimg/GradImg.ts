@@ -20,6 +20,11 @@ type GradImgCompressionOptions = {
 
 export class GradImg implements ImageCompressionAlgorithm {
     static MAGIC = [99, 115, 113, 47, 103, 114, 97, 100] // csq/grad
+    static FILE_EXTENSIONS = ['gradimg']
+
+    getFileExtensions() {
+        return GradImg.FILE_EXTENSIONS
+    }
 
     #average(list: FullColorPixel[], boxSize: number): Position {
         if(list.length == 0) return null
@@ -56,7 +61,7 @@ export class GradImg implements ImageCompressionAlgorithm {
     }
 
     compress(image: ImageData, { boxSize }: GradImgCompressionOptions) {
-        if (!boxSize) throw new Error('no argument provided for qimg option "boxSize"')
+        if (!boxSize) throw new Error('no argument provided for gradimg option "boxSize"')
 
         const uncompressedBoxes = splitIntoBoxes(image, boxSize)
         const compressed = uncompressedBoxes.data.map(box => {
@@ -87,7 +92,7 @@ export class GradImg implements ImageCompressionAlgorithm {
         return new GradImgCompressedImage(data, boxSize)
     }
 
-    fromBuffer(data: ArrayBuffer) {
+    fromBuffer(data: Uint8Array) {
         const a: ImageBoxes<CompressedBox> = {
             size: {
                 width: 16,
@@ -120,7 +125,7 @@ export class GradImgCompressedImage implements CompressedImage {
         const canvas = createCanvas(width, height)
 
         const ctx = canvas.getContext('2d')
-        ctx.fillStyle = 'darkblue'
+        ctx.fillStyle = 'red'
         ctx.fillRect(0, 0, width, height)
 
         for (const box of this.#boxes.data) {
@@ -143,10 +148,6 @@ export class GradImgCompressedImage implements CompressedImage {
                 gradient.addColorStop(1, this.#makeColorString(box.dark))
     
                 ctx.fillStyle = gradient
-            }
-
-            if (box.x == 25 && box.y == 10) {
-                console.log({ box }, ctx.fillStyle)
             }
 
             ctx.fillRect(x, y, this.#boxSize, this.#boxSize)
@@ -180,6 +181,6 @@ export class GradImgCompressedImage implements CompressedImage {
     }
 
     toBuffer() {
-        return new ArrayBuffer(64)
+        return new Uint8Array(64)
     }
 }

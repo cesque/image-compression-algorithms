@@ -2,12 +2,13 @@ import { ImageData } from 'canvas'
 
 export interface ImageCompressionAlgorithm {
     compress: (image: ImageData, options: any) => CompressedImage,
-    fromBuffer: (data: ArrayBuffer) => CompressedImage,
+    fromBuffer: (data: Uint8Array) => CompressedImage,
+    getFileExtensions: () => string[],
 }
 
 export interface CompressedImage {
     toImageData: () => ImageData,
-    toBuffer: () => ArrayBuffer,
+    toBuffer: () => Uint8Array,
 }
 
 export type Position = {
