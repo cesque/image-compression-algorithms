@@ -232,7 +232,7 @@ export class QImgCompressedImage implements CompressedImage {
         const dataLength = [
             (this.#boxes.data.length & (0xFF << 16)) >> 16,
             (this.#boxes.data.length & (0xFF << 8)) >> 8,
-            this.#boxes.data.length & (0xFF),
+            this.#boxes.data.length & 0xFF,
         ]
 
         bytes.push(...dataLength)

@@ -16,11 +16,14 @@ type CompressedBox = Box & {
 
 type GradImgCompressionOptions = {
     boxSize: number,
+    gradientScale: number,
 }
 
 export class GradImg implements ImageCompressionAlgorithm {
     static MAGIC = [99, 115, 113, 47, 103, 114, 97, 100] // csq/grad
     static FILE_EXTENSIONS = ['gradimg']
+
+    static GRADIENT_SCALE_MAX = 1
 
     getFileExtensions() {
         return GradImg.FILE_EXTENSIONS
@@ -63,7 +66,7 @@ export class GradImg implements ImageCompressionAlgorithm {
         }
     }
 
-    compress(image: ImageData, { boxSize }: GradImgCompressionOptions) {
+    compress(image: ImageData, { boxSize, gradientScale }: GradImgCompressionOptions) {
         if (!boxSize) throw new Error('no argument provided for gradimg option "boxSize"')
 
         const uncompressedBoxes = splitIntoBoxes(image, boxSize)
@@ -94,36 +97,38 @@ export class GradImg implements ImageCompressionAlgorithm {
             data: compressed,
         }
 
-        return new GradImgCompressedImage(data, boxSize)
+        return new GradImgCompressedImage(data, boxSize, gradientScale)
     }
 
     fromBuffer(data: Uint8Array) {
-        const header = [...data.slice(0, 16)]
-        const rest = data.slice(16)
+        let bytes = Array.from(data)
 
-        const magic = header.slice(0, 8)
-        const headerData = header.slice(8, 16)
+        const magic = bytes.slice(0, 8)
+        bytes = bytes.slice(8)
 
         if (!magic.every((value, index) => value == GradImg.MAGIC[index])) {
             throw new Error('incorrect filetype, expecting .gradimg file (header magic mismatch)')
         }
 
-        const [
-            versionMajor,
-            versionMinor,
-            boxSize,
-            width,
-            height,
-            ...dataLengthParts
-        ] = headerData
-
+        const versionMajor = bytes.shift()
+        const versionMinor = bytes.shift()
         const version = `${ versionMajor }.${ versionMinor }`
 
         console.log(`loaded gradimg file, version ${ version }`)
 
-        const dataLength = (dataLengthParts[0] << 16)
-            | (dataLengthParts[1] << 8)
-            | dataLengthParts[2]
+        const hasGradientScaling = version != '0.1'
+        const gradientScaleByte = hasGradientScaling ? bytes.shift() : null
+        const gradientScale = hasGradientScaling
+            ? (gradientScaleByte / 255) * GradImg.GRADIENT_SCALE_MAX
+            : 0.5
+
+        const boxSize = bytes.shift()
+        const width = bytes.shift()
+        const height = bytes.shift()
+
+        const dataLength = (bytes.shift() << 16)
+            | (bytes.shift() << 8)
+            | bytes.shift()
 
         // 1 byte x, 1 byte y, 3 bytes light colour rgb, 3 bytes dark colour rgb, 2 bytes light gradient stop, 2 bytes dark gradient stop
         const boxBytesSize = 2 + 3 + 3 + 2 + 2
@@ -132,7 +137,7 @@ export class GradImg implements ImageCompressionAlgorithm {
 
         for(let i = 0; i < dataLength; i++) {
             const index = i * boxBytesSize
-            const boxBytes = rest.slice(index, index + boxBytesSize)
+            const boxBytes = bytes.slice(index, index + boxBytesSize)
 
             const box: CompressedBox = {
                 x: boxBytes[0],
@@ -171,23 +176,37 @@ export class GradImg implements ImageCompressionAlgorithm {
             data: boxes,
         }
 
-        return new GradImgCompressedImage(gradimgData, boxSize)
+        return new GradImgCompressedImage(gradimgData, boxSize, gradientScale)
     }
 }
 
 export class GradImgCompressedImage implements CompressedImage {
     #boxes: ImageBoxes<CompressedBox>
     #boxSize: number
+    #gradientScale: number
 
-    constructor(boxes: ImageBoxes<CompressedBox>, boxSize: number) {
+    constructor(boxes: ImageBoxes<CompressedBox>, boxSize: number, gradientScale: number = 0.5) {
         this.#boxes = boxes
         this.#boxSize = boxSize
+
+        const gradientScaleMin = 1 / 255
+
+        if (gradientScale <= 0 || gradientScale > GradImg.GRADIENT_SCALE_MAX) {
+            throw new Error(`gradient scale must be ${ gradientScaleMin } > x >= ${ GradImg.GRADIENT_SCALE_MAX } (found ${ gradientScale })`)
+        }
+
+        this.#gradientScale = (Math.round((gradientScale / GradImg.GRADIENT_SCALE_MAX) * 255) / 255) * GradImg.GRADIENT_SCALE_MAX
     }
 
     #makeColorString(color) {
         const { r, g, b } = color
         const a = [r, g, b]
         return `rgba(${ a.join(', ') }, 1)`
+    }
+
+    #transform(n) {
+        const value = (((n / 255) - 0.5) * 2) * this.#gradientScale
+        return (this.#boxSize / 2) + value * this.#boxSize
     }
 
     toImageData() {
@@ -199,19 +218,26 @@ export class GradImgCompressedImage implements CompressedImage {
         ctx.fillRect(0, 0, width, height)
 
         for (const box of this.#boxes.data) {
-            const x = box.x * this.#boxSize
-            const y = box.y * this.#boxSize
+            const x = box.x * box.size
+            const y = box.y * box.size
 
             if (box.centers.dark.x == 0 && box.centers.dark.y == 0) {
                 ctx.fillStyle = this.#makeColorString(box.light)
             } else if (box.centers.light.x == 0 && box.centers.light.y == 0) {
                 ctx.fillStyle = this.#makeColorString(box.dark)
             } else {
+                // console.log(
+                //     box,
+                //     x + this.#transform(box.centers.light.x),
+                //     y + this.#transform(box.centers.light.y),
+                //     x + this.#transform(box.centers.dark.x),
+                //     y + this.#transform(box.centers.dark.y)
+                // )
                 const gradient = ctx.createLinearGradient(
-                    x + (box.centers.light.x / 255 * box.size),
-                    y + (box.centers.light.y / 255 * box.size),
-                    x + (box.centers.dark.x / 255 * box.size),
-                    y + (box.centers.dark.y / 255 * box.size)
+                    x + this.#transform(box.centers.light.x),
+                    y + this.#transform(box.centers.light.y),
+                    x + this.#transform(box.centers.dark.x),
+                    y + this.#transform(box.centers.dark.y)
                 )
     
                 gradient.addColorStop(0, this.#makeColorString(box.light))
@@ -253,8 +279,8 @@ export class GradImgCompressedImage implements CompressedImage {
     toBuffer() {
         const bytes: number[] = []
 
-        // version 0.2 has byte packing
-        const version = [0, 1]
+        // version 0.2 has variable gradient scale
+        const version = [0, 2]
 
         bytes.push(...GradImg.MAGIC)
         bytes.push(...version)
@@ -267,6 +293,9 @@ export class GradImgCompressedImage implements CompressedImage {
         if (boxesHeight > 255) throw new Error(`image height too large to be serialised: ${ this.#boxes.size.height / this.#boxSize } boxes tall of size ${ this.#boxSize }`)
         if (this.#boxes.data.length >= (1 << 24)) throw new Error(`image data too large to be serialised: ${ this.#boxes.data.length } (must be able to fit in 24bit integer)`)
 
+        console.log(this.#gradientScale)
+        const gradientScaleByte = Math.max(1, Math.round((this.#gradientScale / GradImg.GRADIENT_SCALE_MAX) * 255))
+        bytes.push(gradientScaleByte) // adding v0.2
         bytes.push(this.#boxSize)
         bytes.push(boxesWidth)
         bytes.push(boxesHeight)
