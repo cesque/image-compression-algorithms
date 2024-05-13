@@ -104,14 +104,22 @@ export class QImg implements ImageCompressionAlgorithm {
             ...dataLengthParts
         ] = headerData
 
-        console.log(`loaded qimg file, version ${ versionMajor }.${ versionMinor}`)
+        const version = `${ versionMajor }.${ versionMinor }`
+
+        console.log(`loaded qimg file, version ${ version }`)
 
         const dataLength = (dataLengthParts[0] << 16)
             | (dataLengthParts[1] << 8)
             | dataLengthParts[2]
 
+        const usesPackedPixels = version != '0.1'
+
+        const boxPixelsBytesSize = usesPackedPixels
+            ? Math.ceil((boxSize ** 2) / 8)
+            : boxSize ** 2
+
         // 1 byte x, 1 byte y, 3 bytes light colour rgb, 3 bytes dark colour rgb, and boxSize^2 bytes
-        const boxBytesSize = 2 + 3 + 3 + (boxSize ** 2)
+        const boxBytesSize = 2 + 3 + 3 + boxPixelsBytesSize
         
         const boxes: CompressedBox[] = []
 
@@ -128,11 +136,25 @@ export class QImg implements ImageCompressionAlgorithm {
                 for(let x = 0; x < boxSize; x++) {
                     const index = (y * boxSize) + x
 
-                    indexedPixels.push({
-                        x,
-                        y,
-                        index: pixels[index]
-                    })
+                    if (usesPackedPixels) {
+                        const byteIndex = Math.floor(index / 8)
+                        const bitIndex = index % 8
+
+                        const byte = pixels[byteIndex]
+                        const bit = (byte >> (7 - bitIndex)) & 1
+
+                        indexedPixels.push({
+                            x,
+                            y,
+                            index: bit,
+                        })
+                    } else {
+                        indexedPixels.push({
+                            x,
+                            y,
+                            index: pixels[index]
+                        })
+                    }
                 }
             }
 
@@ -189,7 +211,7 @@ export class QImgCompressedImage implements CompressedImage {
         const bytes: number[] = []
 
         // version 0.2 has byte packing
-        const version = [0, 1]
+        const version = [0, 2]
 
         bytes.push(...QImg.MAGIC)
         bytes.push(...version)
@@ -227,8 +249,22 @@ export class QImgCompressedImage implements CompressedImage {
             bytes.push(box.dark.g)
             bytes.push(box.dark.b)
     
-            for(const pixel of box.data) {
-                bytes.push(pixel.index)
+            // this was used in v0.1 but its veeeeery inefficient (using a full byte to store a single bit of data)
+            // for(const pixel of box.data) {
+            //     bytes.push(pixel.index)
+            // }
+
+            for (let i = 0; i < box.data.length; i += 8) {
+                const byteSlice = box.data.slice(i, i + 8).map(pixel => pixel.index)
+
+                // handle the case where we run out of bytes non-aligned to byte
+                while(byteSlice.length < 8) byteSlice.push(0)
+
+                const byte = byteSlice.reduce((accumulator, currentBit, index) => {
+                    return accumulator + currentBit * (2 ** (7 - index))
+                }, 0)
+
+                bytes.push(byte)
             }
         }
 
