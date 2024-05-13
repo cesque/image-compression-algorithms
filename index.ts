@@ -28,3 +28,4 @@ export type FullColorPixel = Position & {
 
 export { QImg, QImgCompressedImage } from './qimg/QImg'
 export { GradImg, GradImgCompressedImage } from './gradimg/GradImg'
+export { GradRgb, GradRgbCompressedImage } from './gradrgb/GradRgb'
